@@ -1,0 +1,25 @@
+---
+- name: Execute CI/CD Pipeline
+  hosts: localhost
+  gather_facts: false
+  strategy: free
+  
+  vars:
+    pipeline_phases:
+      - validation
+      - preparation
+      - execution
+      - cleanup
+    execution_strategy: "{{ lookup('env', 'EXECUTION_STRATEGY') | default('containerized') }}"
+    target_environment: "{{ lookup('env', 'TARGET_ENV') | default('development') }}"
+    cost_threshold: 0.75
+
+  tasks:
+    - name: Include pipeline controller role
+      include_role:
+        name: pipeline_controller
+      vars:
+        pipeline_parameters:
+          environment: "{{ target_environment }}"
+          execution_mode: "{{ execution_strategy }}"
+          cost_limit_usd: "{{ cost_threshold }}"
