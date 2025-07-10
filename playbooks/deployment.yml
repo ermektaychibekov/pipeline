@@ -1,0 +1,26 @@
+---
+- name: Deploy Application to Target Environment
+  hosts: deploy_targets
+  serial: 3
+  max_fail_percentage: 25
+  any_errors_fatal: true
+
+  vars:
+    deployment_unit: "{{ lookup('env', 'DEPLOYMENT_UNIT') }}"
+    artifact_version: "{{ lookup('env', 'ARTIFACT_VERSION') }}"
+    immutable_infrastructure: true
+
+  pre_tasks:
+    - name: Validate deployment prerequisites
+      assert:
+        that:
+          - deployment_unit is defined
+          - artifact_version is defined
+          - immutable_infrastructure | bool
+
+  roles:
+    - role: deployment_orchestrator
+      vars:
+        deployment_strategy: "{{ 'blue-green' if target_environment == 'production' else 'rolling' }}"
+        container_runtime: containerd
+        health_check_endpoint: /api/health
