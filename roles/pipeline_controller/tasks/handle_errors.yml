@@ -1,0 +1,42 @@
+---
+- name: Initialize error handling
+  set_fact:
+    error_retry_attempt: 0
+    max_retry_attempts: 5
+    base_retry_delay: 10
+
+- name: Error handling loop
+  block:
+    - name: Attempt recovery action
+      include_role:
+        name: emergency_cleanup
+      vars:
+        failed_component: "{{ ansible_failed_result.module }}"
+        error_details: "{{ ansible_failed_result.msg }}"
+      
+    - name: Verify recovery status
+      assert:
+        that: emergency_cleanup_result.recovery_successful
+        msg: "Recovery attempt failed"
+  rescue:
+    - name: Increment retry counter
+      set_fact:
+        error_retry_attempt: "{{ error_retry_attempt | int + 1 }}"
+        current_delay: "{{ base_retry_delay | int * (2 ** error_retry_attempt) }}"
+      
+    - name: Delay before retry
+      wait_for:
+        timeout: "{{ current_delay }}"
+      
+    - name: Retry recovery
+      include_tasks: handle_errors.yml
+      when: error_retry_attempt < max_retry_attempts
+      
+    - name: Final failure notification
+      include_role:
+        name: notification_dispatcher
+      vars:
+        notification_payload:
+          status: "FATAL"
+          error_details: "{{ ansible_failed_result }}"
+      when: error_retry_attempt >= max_retry_attempts
