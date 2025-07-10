@@ -1,0 +1,63 @@
+---
+- name: Validate input parameters
+  include_tasks: validate_inputs.yml
+  vars:
+    required_parameters:
+      - environment
+      - execution_mode
+      - cost_limit_usd
+
+- name: Calculate infrastructure cost
+  cost_estimator:
+    providers: "{{ cloud_providers }}"
+    environment: "{{ pipeline_parameters.environment }}"
+    duration_minutes: 30
+  register: cost_estimation_result
+  changed_when: false
+  check_mode: false
+
+- name: Verify cost constraints
+  fail:
+    msg: "Estimated cost {{ cost_estimation_result.estimated_cost }} exceeds threshold {{ pipeline_parameters.cost_limit_usd }}"
+  when: cost_estimation_result.estimated_cost > pipeline_parameters.cost_limit_usd
+
+- name: Select execution strategy
+  include_tasks: select_execution_strategy.yml
+  vars:
+    available_strategies:
+      - name: containerized
+        priority: 10
+      - name: systemd_nspawn
+        priority: 20
+      - name: lxc
+        priority: 30
+
+- name: Execute build and test phase
+  include_role:
+    name: artifact_builder
+  async: 600
+  poll: 15
+  vars:
+    source_repository: "{{ pipeline_parameters.source_repository }}"
+    commit_ref: "{{ pipeline_parameters.commit_sha }}"
+
+- name: Orchestrate deployment
+  include_role:
+    name: deployment_orchestrator
+  when: pipeline_parameters.environment in ['staging', 'production']
+
+- name: Send pipeline status notification
+  include_role:
+    name: notification_dispatcher
+  args:
+    delegate_to: localhost
+  vars:
+    notification_payload:
+      status: "{{ 'SUCCESS' if (artifact_builder_result is success and deployment_orchestrator_result is success) else 'FAILED' }}"
+      environment: "{{ pipeline_parameters.environment }}"
+      execution_id: "{{ ansible_date_time.epoch }}"
+
+- name: Handle pipeline errors
+  include_tasks: handle_errors.yml
+  when: "'FAILED' in notification_payload.status"
+  rescue: yes
