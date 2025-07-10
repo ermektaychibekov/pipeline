@@ -1,0 +1,25 @@
+---
+- name: Load notification configuration
+  ansible.builtin.include_vars: 
+    file: "{{ notification_provider }}.yml"
+
+- name: Send Matrix notification
+  matrix:
+    msg: "{{ notification_message }}"
+    room_id: "{{ matrix_room_id }}"
+    homeserver: "{{ matrix_homeserver }}"
+    token: "{{ matrix_access_token }}"
+  when: notification_provider == 'matrix'
+
+- name: Send Telegram notification
+  community.general.telegram:
+    token: "{{ telegram_bot_token }}"
+    chat_id: "{{ telegram_chat_id }}"
+    msg: "{{ notification_message }}"
+  when: notification_provider == 'telegram'
+
+- name: Send Mattermost notification
+  community.general.mattermost:
+    url: "{{ mattermost_webhook_url }}"
+    text: "{{ notification_message }}"
+  when: notification_provider == 'mattermost'
